@@ -1,0 +1,83 @@
+name: Deploy Phishing API
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phishing-local-deployment
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Check code and dependencies
+        run: |
+          python -m pip check
+          python -m compileall -q src dags tests
+          python -m unittest discover -s tests -v
+
+  deploy:
+    needs: validate
+    if: github.ref == 'refs/heads/main'
+    runs-on: [self-hosted, Linux, X64, phishing-deploy]
+    timeout-minutes: 20
+    env:
+      DEPLOY_COMMIT: ${{ github.sha }}
+
+    steps:
+      - name: Update local project to the tested commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$HOME/phishing-detector"
+
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Commit or set aside local changes before deploying."
+            exit 1
+          fi
+
+          git fetch origin main
+          git merge --ff-only "$DEPLOY_COMMIT"
+          test "$(git rev-parse HEAD)" = "$DEPLOY_COMMIT"
+
+      - name: Install dependencies and test locally
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$HOME/phishing-detector"
+          .venv/bin/python -m pip install -r requirements.txt
+          .venv/bin/python -m pip check
+          .venv/bin/python -m unittest discover -s tests -v
+
+      - name: Train and save the model
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$HOME/phishing-detector"
+          .venv/bin/python src/train_model.py
+
+      - name: Restart API and check health
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo -n /usr/bin/systemctl restart phishing-api.service
+          curl --fail --silent --show-error \
+            --retry 15 --retry-connrefused --retry-delay 2 \
+            http://127.0.0.1:8000/health

@@ -1,0 +1,1 @@
+danielmir3329 ALL=(root) NOPASSWD: /usr/bin/systemctl restart phishing-api.service
