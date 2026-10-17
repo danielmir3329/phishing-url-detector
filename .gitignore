@@ -1,0 +1,13 @@
+.venv/
+.airflow-venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.env
+data/
+models/
+mlruns/
+mlartifacts/
+airflow/
+monitoring/prometheus-data/
+*.log
