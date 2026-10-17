@@ -47,4 +47,12 @@ with DAG(
         task_id="train_model"
     )("train_model.py")
 
-    clean >> features >> load >> train
+    extract_api = run_script.override(
+        task_id="extract_api"
+    )("extract_api.py")
+
+    extract_text = run_script.override(
+        task_id="extract_text"
+    )("extract_text.py")
+
+    extract_api >> extract_text >> clean >> features >> load >> train
