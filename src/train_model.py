@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 import logging
 
@@ -14,7 +15,7 @@ from sklearn.metrics import (
     f1_score,
     roc_auc_score,
 )
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV, StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -56,10 +57,10 @@ def main():
     )
     mlflow.set_experiment("phishing-url-detection")
 
-    with mlflow.start_run(run_name="logistic-regression-baseline"):
+    with mlflow.start_run(run_name="logistic-regression-tuning"):
         mlflow.log_params({
             "model": "logistic_regression",
-            "C": 1.0,
+            "C_candidates": "0.1, 1.0, 10.0",
             "features": X.shape[1],
             "train_rows": len(X_train),
             "test_rows": len(X_test),
@@ -69,7 +70,26 @@ def main():
         })
 
         logging.info("Training model...")
-        model.fit(X_train, y_train)
+        search = GridSearchCV(
+            model,
+            {"classifier__C": [0.1, 1.0, 10.0]},
+            scoring="f1",
+            cv=StratifiedKFold(3, shuffle=True, random_state=42),
+            n_jobs=2
+        )
+        search.fit(X_train, y_train)
+        model = search.best_estimator_
+        mlflow.log_param("selected_C", search.best_params_["classifier__C"])
+        mlflow.log_param("cv_folds", 3)
+        mlflow.log_metric("best_cv_f1", float(search.best_score_))
+        for params, score in zip(
+            search.cv_results_["params"],
+            search.cv_results_["mean_test_score"]
+        ):
+            name = str(params["classifier__C"]).replace(".", "_")
+            mlflow.log_metric(f"cv_f1_C_{name}", float(score))
+        print("Selected C:", search.best_params_["classifier__C"])
+        print("Best CV F1:", search.best_score_)
 
         predictions = model.predict(X_test)
         probabilities = model.predict_proba(X_test)[:, 1]
@@ -95,7 +115,17 @@ def main():
         output.mkdir(exist_ok=True)
 
         model_path = output / "baseline_model.joblib"
-        joblib.dump(model, model_path)
+        version = mlflow.active_run().info.run_id
+        version_folder = output / version
+        version_folder.mkdir(exist_ok=True)
+        joblib.dump(model, version_folder / "model.joblib")
+        metadata = output / "model_version.json"
+        metadata.write_text(json.dumps({"model_version": version}))
+        mlflow.log_artifact(str(metadata))
+        print("Model version:", version)
+        temporary = output / "baseline_model.tmp"
+        joblib.dump(model, temporary)
+        temporary.replace(model_path)
         mlflow.log_artifact(str(model_path), artifact_path="model")
 
         report = classification_report(

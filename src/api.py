@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -11,6 +12,13 @@ from src.build_features import extract_features, FEATURE_COLUMNS
 PROJECT = Path(__file__).resolve().parents[1]
 model = joblib.load(PROJECT / "models/baseline_model.joblib")
 
+metadata_path = PROJECT / "models/model_version.json"
+MODEL_VERSION = (
+    json.loads(metadata_path.read_text())["model_version"]
+    if metadata_path.exists()
+    else "logistic-regression-baseline"
+)
+
 app = FastAPI(title="Phishing URL Detector", version="0.1.0")
 
 
@@ -20,7 +28,7 @@ class PredictionRequest(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "model": "logistic-regression-baseline"}
+    return {"status": "ok", "model": MODEL_VERSION}
 
 
 @app.post("/predict")
@@ -58,7 +66,7 @@ def predict(request: PredictionRequest):
             "Likely phishing" if prediction == 1 else "Likely legitimate"
         ),
         "phishing_score": score,
-        "model_version": "logistic-regression-baseline"
+        "model_version": MODEL_VERSION
     }
 
 from io import BytesIO

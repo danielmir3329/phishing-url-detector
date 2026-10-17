@@ -66,7 +66,7 @@ A legitimate prediction does not guarantee a safe website.
 ## Automation and Monitoring
 
 Airflow runs dags/phishing_pipeline.py daily:
-cleaning → features → database loading → training.
+API extraction → title-text extraction → cleaning → features → database loading → training.
 It uses a separate .airflow-venv environment.
 
 GitHub Actions CI checks dependencies, syntax, and feature tests.
@@ -84,13 +84,28 @@ Monitoring measures service operation, not prediction accuracy.
 
     .venv/bin/python -m unittest discover -s tests -v
 
-## Remaining Assignment Work
 
-- Complete web API extraction and title-text processing.
-- Demonstrate batched extraction.
-- Add MLflow hyperparameter tuning and explicit model versions.
-- Verify the deployment workflow succeeds.
-- Complete the assignment report.
+## Additional Extraction and Tuning
 
-Generated datasets, models, environments, and credentials are
-excluded from Git.
+src/extract_text.py processes webpage-title text in 10,000-row batches.
+src/extract_api.py retrieves domain registration JSON through RDAP.
+Both store their results in SQLite and are included in the Airflow DAG.
+These supplementary records are separate from the URL-only classifier.
+
+Training compares C values 0.1, 1.0, and 10.0 using three-fold
+stratified cross-validation on the training partition. MLflow records
+candidate scores and the selected setting. The held-out test partition
+is used after selection.
+
+The observed tuned run selected C=10.0, with cross-validation F1
+0.991876. Test precision was 0.9992, recall 0.9857, F1 0.9924,
+ROC AUC 0.9966, and average precision 0.9973.
+
+Models are retained in folders named by MLflow run ID.
+models/model_version.json identifies the selected model.
+The API reads this identifier at startup.
+
+A manual deployment workflow has completed successfully.
+The final updated six-task Airflow run should also be checked.
+Generated data, models, environments, and credentials are excluded
+from Git. The written assignment report accompanies this repository.
